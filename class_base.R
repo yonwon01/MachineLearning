@@ -19,7 +19,7 @@
 # - Y/N(이분형), Norminal(다항형)->이분형을 조금 더 풀어 놓은것(어떤 조건에서 그러한 결과가 낫는지 몇가지 항목을 두는것 ) , Ordinal(서열형)->ex)기계 다운이 되서 복구했을때 시간대를 계산했을때 기계마다 복구시간의 서열, Average(수치형)의
 #   4가지 성과를 다르게 발생시키는 조건/요인/속성/변수/기준/피처(feature)와 
 # - 이들이 가지는 임계치(성과다 달라지는 경계값)을 도출함
-# - 피처 + 임계치 = 규칙
+# - 피처(feature) + 임계치 = 규칙
 
 # - 이중에서 Y/N(이분형), Norminal(다항형), Ordinal(서열형) 성과를 
 #   발생시키는 규칙을 찾는 문제를 분류예측(classification)이라고 함
@@ -73,7 +73,7 @@
 #   그렇지 않은 고객으로 나뉘고 있음
 # - 어떤 특성을 가진 고객이 쿠폰이벤트에 반응을 보이는지?
 # - 어떤 특성을 가진 고객이 쿠폰이벤트에 반응을 보이지 않는지?
-# - 반응 유무를 결정하는 조건/요인/속성/변수/기준/피처(feature)와 
+# - 반응 유무를 결정하는 조건/요인/속성/변수/기준/피처(feature)(어떤 것에 반응을 보이는지 )와 
 #   이들이 가지는 임계치와 상대적인 중요도는?
 
 ## 분석 모델링 및 조작적 정의
@@ -81,9 +81,9 @@
 # amount(1회평균 카드사용금액) --> 수치데이터(만원)
 # period(1회평균 온라인쇼핑몰 접속시간) --> 수치데이터(분)
 # variety(상품구매다양성) --> 수치데이터(부문)
-# response(쿠폰반응유형) --> 0:nr(반응안함, no-response)
-#                        --> 1:low(단순/저가구매)
-#                        --> 2:high(복합/고가구매)
+# response(쿠폰반응유형) --> 0:nr(반응안함, no-response)    (3개로나뉨->다항 분류 예측) 
+#                        --> 1:low(단순/저가구매)  cherry picker 
+#                        --> 2:high(복합/고가구매) 쿠폰에 반응을 잘 하는 사람들 
 
 ###################################################################
 ## raw 데이터 준비
@@ -198,10 +198,10 @@ scatterplotMatrix(~ usage + amount + period + variety | response, data=raw,
 
 ###################################################################
 ## 분류규칙에 가장 영향을 많이 미치는 변수는 무엇인지를 탐색분석
-install.packages("FSelector")
+install.packages("FSelector") # 예측모델에서 필요한 독립변수의 수치를 직접 알려줌 (보통 0.4이상이여야 연관있다고 여김 )
 library(FSelector)
 
-chi.squared(response ~ usage + amount + period + variety, data=raw)
+chi.squared(response ~ usage + amount + period + variety, data=raw) # 왼쪽이 종속변수 ~ 독립변수 +독립변수+ㅇㅇㅇ
 chi.squared(response ~ ., data = raw) # formula 축약버전
 
 x <- chi.squared(response ~ usage + amount + period + variety, data=raw)
@@ -216,8 +216,9 @@ cutoff.k(x, 4)
 ## 랜덤넘버 생성
 set.seed(1234)
 
-## 학습(트레이닝) & 검증(테스트) 데이터 추출
-index <- sample(1:NROW(raw), nrow(raw)*0.7, replace=F)
+## 학습(트레이닝) & 검증(테스트) 데이터 추출  
+#데이터 70 프로만 추출한다는것 
+index <- sample(1:NROW(raw), nrow(raw)*0.7, replace=F)  #인덱스번호만 추출
 index
 
 ## 학습 & 검증 데이터 정보조회
@@ -240,24 +241,30 @@ library(party)
 ## 분류분석 모델 관계식 정의
 f <- response ~ usage + amount + period + variety
 
-## 학습데이터를 이용한 분류규칙 생성
+## 학습데이터를 이용한 분류규칙 생성  decision tree데이터의 장점은 임계치가 나와서 조건을 볼 수 있어서 좋다 
 rule <- ctree(f, data=trainD)
 rule
 
 ## 분류규칙 그래프 그리기
 plot(rule)
 plot(rule, type="simple")
+#예측력이 1순위amount, 2순위period두개 나옴 
+#학습한 데이터 70프로에서 105명중 amount조건에서 임계치 19000원보다 작았을때(임계치) 90프로정도가 반응이 없을가능성이 높다 ->이벤트 할 필요가 없다
+#한시간이상 웹서핑 하는 사람이 기존에 33명이 있었다. 그사람들의 패턴(response변수)를 분석해본 결과 고가 제품을 많이 산다. 
+#
 
 ## --------------------------------------------
 ## 분류규칙을 이용한 학습(train)데이터 분류분석
 train.out <- predict(rule)
 train.out # 학습데이터 개별 관찰치를 분류규칙을 통해 분류해 봄
 
-## 학습데이터 response 패턴과 분류규칙 분류패턴간 교차분석
-train.result <- table(trainD$response, train.out, 
+
+train.out
+## 학습데이터 response 패턴(105개)과 분류규칙 분류패턴간 교차분석
+train.result <- table(train.out, trainD$response, 
                 dnn=c("Actual", "Training"))
 train.result
-addmargins(train.result) 
+addmargins(train.result)  # high high 에서 28 은 일치하게 맞추었고 옆 6,2는 잘못 검증된 데이터라는 뜻 plot에서 low랑 nr 수 
 # 원래 학습(tainD)데이터 존재하는 실제 response 패턴과
 # 학습데이터에서 도출한 분류규칙을 이용해 학습데이터를 분류해보고 
 # 이들간의 교차분석을 통해 분류규칙의 적용가능성을 파악
@@ -265,17 +272,18 @@ addmargins(train.result)
 ## 학습(train)데이터 분류결과 정확성(Accuracy) 평가
 sum(train.result) 
 diag(train.result) 
-sum(diag(train.result))/sum(train.result) 
-
+sum(diag(train.result))/sum(train.result) #85프로정도의  정확도가 나옴 ( 28+30+32/105 )
+#학습데이터를 기준으로 약 85프로의 정확도를 가지고 있다 
 ###################################################################
 ## 검증(test)데이터에 대한 분류분석
+#남은 30프로(검증test)데이터와의 비교 
 test.out <- predict(rule, newdata=testD)
 test.out # 학습데이터 개별 관찰치를 분류규칙을 통해 분류해봄
 
 ## 검증데이터 response 패턴과 분류규칙 분류패턴간 교차분석
 test.result <- table(testD$response, test.out)
 test.result
-addmargins(test.result)
+addmargins(test.result) #confusion matrix 혼돈표 
 # 원래 검증(testD)데이터 존재하는 실제 response 패턴과
 # 학습데이터에서 도출한 분류규칙을 이용해 검증데이터를 분류해보고 
 # 이들간의 교차분석을 통해 분류규칙에 대한 재검증(크로스체크)을 실시함
@@ -283,7 +291,7 @@ addmargins(test.result)
 ## 검증(test)데이터 분류결과 정확성(Accuracy) 평가
 sum(test.result) 
 diag(test.result) 
-sum(diag(test.result))/sum(test.result) 
+sum(diag(test.result))/sum(test.result) #85.1  86.67 비슷  모델에 안정성이 있
 
 ###################################################################
 
